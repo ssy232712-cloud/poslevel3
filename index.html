@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>까페 포스기 실습 앱</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
+        body { font-family: 'Nanum Gothic', sans-serif; touch-action: manipulation; }
+        
+        .coin-anim {
+            position: absolute;
+            font-size: 2rem;
+            animation: flyCoin 1s ease-in-out forwards;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        @keyframes flyCoin {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) scale(0.5); opacity: 0; }
+        }
+
+        .pulse-btn {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+
+        .mic-active {
+            animation: micPulse 1s infinite alternate;
+        }
+        @keyframes micPulse {
+            from { background-color: #f97316; }
+            to { background-color: #ea580c; transform: scale(1.02); }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 h-screen flex flex-col overflow-hidden select-none">
+
+    <!-- Top Header -->
+    <header class="bg-white shadow-sm p-4 flex justify-between items-center z-10 shrink-0">
+        <div class="flex items-center gap-4">
+            <h1 class="text-2xl font-black text-slate-800">☕ 즐거운 카페 실습</h1>
+            <div class="bg-blue-100 text-blue-800 px-4 py-2 rounded-full font-bold text-lg border-2 border-blue-300" id="levelDisplay">
+                1단계 (쉬운 주문)
+            </div>
+        </div>
+        <div class="flex items-center gap-6">
+            <!-- Stars Progress -->
+            <div class="flex flex-col items-center">
+                <span class="text-xs font-bold text-slate-500 mb-1">연속 성공 (10번이면 레벨업!)</span>
+                <div class="flex gap-1 text-2xl" id="starContainer">
+                    <!-- Stars inserted by JS -->
+                </div>
+            </div>
+            <!-- Revenue -->
+            <div class="bg-yellow-100 border-2 border-yellow-400 rounded-xl px-5 py-2 flex items-center gap-3 relative" id="revenueBox">
+                <span class="text-3xl">🪙</span>
+                <div class="flex flex-col">
+                    <span class="text-xs font-bold text-yellow-700">오늘의 매출</span>
+                    <span class="text-xl font-black text-yellow-900" id="revenueText">0원</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex p-4 gap-4 overflow-hidden">
+        
+        <!-- Left: Customer & Speech Area -->
+        <section class="w-1/3 flex flex-col gap-4">
+            
+            <!-- Speech Coach Box (For Greeting & Closing) -->
+            <div id="greetingSection" class="bg-blue-50 border-4 border-blue-400 rounded-2xl p-5 flex flex-col items-center justify-center text-center shadow-md shrink-0 transition-all">
+                <div id="greetingTitle" class="text-sm font-black text-blue-800 mb-2">💬 손님에게 인사를 건네볼까요?</div>
+                <div id="greetingPhrase" class="text-2xl font-black text-blue-950 mb-4 bg-white py-3 px-5 rounded-2xl border-2 border-blue-200 shadow-sm">
+                    "주문하시겠습니까?"
+                </div>
+                
+                <div class="w-full flex flex-col gap-2">
+                    <button id="btnStartRecognition" onclick="startSpeechRecognition()" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 px-4 rounded-xl flex items-center justify-center gap-3 shadow transition-all active:scale-95 text-lg">
+                        <span id="micIcon" class="text-2xl">🎙️</span>
+                        <span id="micText">마이크 켜고 말하기</span>
+                    </button>
+                    <button id="btnSpeakHelper" onclick="speakHelperPhrase()" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95">
+                        <span class="text-xl">🗣️</span> 대신 말하기 (도우미)
+                    </button>
+                    <div id="micFeedback" class="text-sm font-bold text-red-500 mt-2 min-h-[1.5rem]"></div>
+                </div>
+            </div>
+
+            <!-- Customer Speech Bubble (Hidden during Greeting/Closing) -->
+            <div id="customerSpeech" class="flex-1 bg-white rounded-3xl p-6 border-4 border-slate-200 shadow-lg flex flex-col items-center hidden relative">
+                <div class="absolute -top-4 -left-4 text-6xl">🧑‍🦱</div>
+                <div class="text-lg font-bold text-slate-600 mb-2 bg-slate-100 px-4 py-1 rounded-full">손님의 주문서</div>
+                
+                <div class="flex-1 flex flex-col justify-center items-center w-full">
+                    <div id="speechText" class="text-xl font-bold text-center text-slate-800 mb-6 leading-relaxed break-keep">
+                        (주문 내용)
+                    </div>
+                    
+                    <!-- Visual Hint Box -->
+                    <div class="w-full bg-orange-50 rounded-2xl p-4 border-2 border-orange-200">
+                        <div class="text-sm font-bold text-orange-800 mb-2 text-center">👇 그림을 보고 개수를 맞춰보세요 👇</div>
+                        <div id="pictogramList" class="flex flex-wrap justify-center gap-3">
+                            <!-- Pictograms inserted by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btnSpeakOrder" onclick="speakOrder()" class="mt-4 w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-black py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all">
+                    <span>🔊 주문 다시 듣기</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Right: POS Machine Area -->
+        <section class="w-2/3 bg-white rounded-3xl shadow-xl flex flex-col border-4 border-slate-800 overflow-hidden">
+            <!-- Category Tabs -->
+            <div class="flex bg-slate-800 p-2 gap-2 text-white shrink-0">
+                <button onclick="switchTab('coffee')" id="tab_coffee" class="flex-1 py-3 font-black text-lg rounded-xl bg-orange-500 transition-colors">☕ 커피</button>
+                <button onclick="switchTab('beverage')" id="tab_beverage" class="flex-1 py-3 font-black text-lg rounded-xl hover:bg-slate-700 transition-colors">🍹 차/음료</button>
+                <button onclick="switchTab('dessert')" id="tab_dessert" class="flex-1 py-3 font-black text-lg rounded-xl hover:bg-slate-700 transition-colors">🍰 디저트</button>
+            </div>
+
+            <div class="flex flex-1 overflow-hidden">
+                <!-- Menu Grid -->
+                <div class="w-2/3 p-4 bg-slate-50 overflow-y-auto">
+                    <div id="menuGrid" class="grid grid-cols-3 gap-3">
+                        <!-- Menu items inserted by JS -->
+                    </div>
+                </div>
+
+                <!-- Basket & Payment -->
+                <div class="w-1/3 bg-white border-l-4 border-slate-200 flex flex-col">
+                    <div class="bg-slate-100 py-2 text-center font-black text-slate-700 shrink-0">🛒 장바구니</div>
+                    <div id="basketList" class="flex-1 p-3 overflow-y-auto bg-slate-50">
+                        <!-- Basket items -->
+                    </div>
+                    
+                    <div class="p-4 bg-white border-t-2 border-slate-200 shrink-0">
+                        <div class="flex justify-between items-end mb-4">
+                            <span class="font-bold text-slate-500">총 결제금액</span>
+                            <span id="totalPrice" class="text-2xl font-black text-slate-800">0원</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="clearBasket()" class="w-1/3 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl active:scale-95 transition-all">전체 취소</button>
+                            <button onclick="submitOrder()" class="w-2/3 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-lg shadow-lg active:scale-95 transition-all pulse-btn" id="payButton">💳 결제하기</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Dialog Overlays -->
+    <div id="dialogOverlay" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        
+        <!-- Success Popup -->
+        <div id="successPopup" class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl hidden transform transition-all scale-100">
+            <div class="text-7xl mb-4">🎉</div>
+            <h2 class="text-3xl font-black text-emerald-600 mb-2">참 잘했어요!</h2>
+            <p class="text-slate-600 font-bold mb-6">주문하신 음료를 정확하게<br>계산했습니다.</p>
+            <button onclick="nextOrder()" class="w-full py-4 bg-emerald-500 text-white font-black rounded-xl text-lg hover:bg-emerald-600 active:scale-95 transition-all">다음 손님 받기 ➡️</button>
+        </div>
+
+        <!-- Fail Popup -->
+        <div id="failPopup" class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl hidden">
+            <div class="text-7xl mb-4">🤔</div>
+            <h2 class="text-2xl font-black text-orange-600 mb-2">다시 한 번 확인해볼까요?</h2>
+            <p id="failMsg" class="text-slate-600 font-bold mb-6">장바구니에 담긴 메뉴나 수량이<br>손님의 주문과 다릅니다.</p>
+            <div class="bg-orange-50 text-orange-800 p-3 rounded-xl text-sm font-bold mb-6 break-keep" id="hintSpeechText">
+                힌트가 들어갈 자리
+            </div>
+            <button onclick="closeDialog()" class="w-full py-4 bg-orange-500 text-white font-black rounded-xl text-lg hover:bg-orange-600 active:scale-95 transition-all">다시 주문받기 🔄</button>
+        </div>
+
+        <!-- Level Up Popup -->
+        <div id="levelupPopup" class="bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl hidden border-4 border-yellow-200">
+            <div class="text-8xl mb-4 animate-bounce">🌟</div>
+            <h2 class="text-4xl font-black text-yellow-900 mb-2">레벨 업!</h2>
+            <p class="text-yellow-800 font-bold mb-6 text-lg">10번 연속 성공!<br>다음 단계로 넘어갑니다!</p>
+            <button onclick="closeDialog()" class="w-full py-4 bg-yellow-800 text-white font-black rounded-xl text-xl shadow-lg hover:bg-yellow-900 active:scale-95 transition-all">도전하기 💪</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Data ---
+        const MENU_ITEMS = [
+            // Coffee
+            { id: 'c1', category: 'coffee', name: '아메리카노', price: 3000, emoji: '☕', hasTemp: true },
+            { id: 'c2', category: 'coffee', name: '카페라떼', price: 4000, emoji: '🥛', hasTemp: true },
+            { id: 'c3', category: 'coffee', name: '카푸치노', price: 4000, emoji: '☁️', hasTemp: true },
+            { id: 'c4', category: 'coffee', name: '카페모카', price: 4500, emoji: '🍫', hasTemp: true },
+            { id: 'c5', category: 'coffee', name: '마끼아또', price: 4500, emoji: '🍯', hasTemp: true },
+            { id: 'c6', category: 'coffee', name: '에스프레소', price: 2500, emoji: '⚡', hasTemp: false },
+            // Beverage
+            { id: 'b1', category: 'beverage', name: '오렌지주스', price: 4500, emoji: '🍊', hasTemp: false },
+            { id: 'b2', category: 'beverage', name: '딸기라떼', price: 5000, emoji: '🍓', hasTemp: true },
+            { id: 'b3', category: 'beverage', name: '녹차라떼', price: 4500, emoji: '🍵', hasTemp: true },
+            { id: 'b4', category: 'beverage', name: '레몬에이드', price: 4800, emoji: '🍋', hasTemp: false },
+            { id: 'b5', category: 'beverage', name: '캐모마일티', price: 4000, emoji: '🌼', hasTemp: true },
+            { id: 'b6', category: 'beverage', name: '자몽에이드', price: 4800, emoji: '🍹', hasTemp: false },
+            // Dessert
+            { id: 'd1', category: 'dessert', name: '초코쿠키', price: 2000, emoji: '🍪', hasTemp: false },
+            { id: 'd2', category: 'dessert', name: '치즈케이크', price: 5500, emoji: '🍰', hasTemp: false },
+            { id: 'd3', category: 'dessert', name: '샌드위치', price: 6000, emoji: '🥪', hasTemp: false },
+            { id: 'd4', category: 'dessert', name: '초코케이크', price: 5500, emoji: '🍩', hasTemp: false },
+            { id: 'd5', category: 'dessert', name: '마카롱', price: 3000, emoji: '🥯', hasTemp: false },
+            { id: 'd6', category: 'dessert', name: '와플', price: 4500, emoji: '🧇', hasTemp: false }
+        ];
+
+        // --- State ---
+        let currentLevel = 1;
+        let consecutiveSuccesses = 0;
+        let totalRevenue = 0;
+        let activeTab = 'coffee';
+        let posBasket = {}; // key: id_temp (e.g., 'c1_ICE')
+        let currentOrder = []; // [{item, qty, temp}, ...]
+        
+        // Phases: 'greeting' -> 'ordering' -> 'closing'
+        let orderPhase = 'greeting'; 
+        let recognitionActive = false;
+        let recognition = null;
+        let speechSynth = window.speechSynthesis;
+
+        // --- Initialization ---
+        window.onload = function() {
+            renderProgressStars();
+            switchTab('coffee');
+            setupWebSpeechAPI();
+            generateOrder();
+        };
+
+        // --- Web Speech API & TTS ---
+        function setupWebSpeechAPI() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+                recognition = new SpeechRecognition();
+                recognition.lang = 'ko-KR';
+                recognition.interimResults = false;
+                recognition.maxAlternatives = 1;
+
+                recognition.onstart = function() {
+                    recognitionActive = true;
+                    document.getElementById('micIcon').innerText = '👂';
+                    document.getElementById('micText').innerText = '말씀해 주세요...';
+                    
+                    let hint = currentLevel === 1 ? '상냥하게 인사해볼까요?' : (orderPhase === 'closing' ? '마무리 인사를 해주세요!' : '다정하게 길게 인사해볼까요?');
+                    document.getElementById('micFeedback').innerText = hint;
+                    
+                    const btn = document.getElementById('btnStartRecognition');
+                    btn.classList.add('mic-active');
+                };
+
+                recognition.onend = function() {
+                    recognitionActive = false;
+                    document.getElementById('micIcon').innerText = '🎙️';
+                    document.getElementById('micText').innerText = '마이크 켜고 말하기';
+                    document.getElementById('btnStartRecognition').classList.remove('mic-active');
+                };
+
+                recognition.onerror = function(event) {
+                    console.error("Speech Error", event.error);
+                    document.getElementById('micFeedback').innerText = '인식에 실패했어요. 대신 말하기 도우미를 써보세요!';
+                };
+
+                recognition.onresult = function(event) {
+                    const resultText = event.results[0][0].transcript.replace(/\s+/g, '');
+                    document.getElementById('micFeedback').innerText = `내 목소리: "${event.results[0][0].transcript}"`;
+                    
+                    if (orderPhase === 'greeting') {
+                        let isMatched = false;
+                        if (currentLevel === 1) {
+                            if (resultText.includes('주문') || resultText.includes('하시겠') || resultText.includes('드릴까')) isMatched = true;
+                        } else {
+                            if ((resultText.includes('안녕') && resultText.includes('주문')) || resultText.includes('하시겠')) isMatched = true;
+                        }
+
+                        if (isMatched) {
+                            setTimeout(() => {
+                                playSound('success');
+                                orderPhase = 'ordering';
+                                updateUIPhase();
+                            }, 800);
+                        } else {
+                            const hintText = currentLevel === 1 ? '"주문하시겠습니까?"' : '"안녕하세요? 주문하시겠습니까?"';
+                            document.getElementById('micFeedback').innerText = `${hintText} 라고 조금 더 또렷하게 말해보세요!`;
+                        }
+                    } 
+                    else if (orderPhase === 'closing') {
+                        if (resultText.includes('결제') || resultText.includes('완료') || resultText.includes('감사') || resultText.includes('고맙')) {
+                            setTimeout(() => {
+                                completeOrderSuccess();
+                            }, 800);
+                        } else {
+                            document.getElementById('micFeedback').innerText = '"결제 완료되었습니다. 감사합니다." 라고 말해보세요!';
+                        }
+                    }
+                };
+            }
+        }
+
+        function startSpeechRecognition() {
+            playSound('click');
+            if (!recognition) {
+                document.getElementById('micFeedback').innerText = '이 브라우저는 마이크를 지원하지 않아요. 도우미를 클릭하세요!';
+                return;
+            }
+            if (recognitionActive) {
+                recognition.stop();
+            } else {
+                try { recognition.start(); } catch(e) { console.error(e); }
+            }
+        }
+
+        function speakHelperPhrase() {
+            playSound('click');
+            let speechStr = "";
+            if (orderPhase === 'greeting') {
+                speechStr = currentLevel === 1 ? "주문하시겠습니까?" : "안녕하세요? 주문하시겠습니까?";
+            } else if (orderPhase === 'closing') {
+                speechStr = "결제 완료되었습니다. 감사합니다.";
+            }
+
+            if (speechSynth) {
+                speechSynth.cancel();
+                const utterance = new SpeechSynthesisUtterance(speechStr);
+                utterance.lang = 'ko-KR';
+                utterance.rate = 0.9; 
+                utterance.pitch = 1.1;
+                
+                utterance.onend = function() {
+                    document.getElementById('micFeedback').innerText = '🗣️ 대신 말하기 완료!';
+                    setTimeout(() => {
+                        if (orderPhase === 'greeting') {
+                            playSound('success');
+                            orderPhase = 'ordering';
+                            updateUIPhase();
+                        } else if (orderPhase === 'closing') {
+                            completeOrderSuccess();
+                        }
+                    }, 600);
+                };
+                speechSynth.speak(utterance);
+            } else {
+                // Fallback if TTS not supported
+                if (orderPhase === 'greeting') { orderPhase = 'ordering'; updateUIPhase(); }
+                else if (orderPhase === 'closing') { completeOrderSuccess(); }
+            }
+        }
+
+        // --- Core Game Logic ---
+        function generateOrder() {
+            currentOrder = [];
+            clearBasket(); // Reset POS Basket
+
+            // Determine order complexity based on level
+            if (currentLevel === 1) {
+                const item = MENU_ITEMS[Math.floor(Math.random() * MENU_ITEMS.length)];
+                currentOrder.push({ item: item, qty: 1, temp: null });
+            } 
+            else if (currentLevel === 2) {
+                const numItems = Math.floor(Math.random() * 2) + 1; // 1 to 2
+                const shuffled = [...MENU_ITEMS].sort(() => 0.5 - Math.random());
+                for (let i = 0; i < numItems; i++) {
+                    const qty = Math.floor(Math.random() * 2) + 1; // 1 to 2
+                    currentOrder.push({ item: shuffled[i], qty: qty, temp: null });
+                }
+            } 
+            else if (currentLevel === 3) {
+                const numItems = Math.floor(Math.random() * 2) + 2; // 2 to 3
+                const shuffled = [...MENU_ITEMS].sort(() => 0.5 - Math.random());
+                for (let i = 0; i < numItems; i++) {
+                    const qty = Math.floor(Math.random() * 3) + 1; // 1 to 3
+                    const temp = shuffled[i].hasTemp ? (Math.random() > 0.5 ? 'HOT' : 'ICE') : null;
+                    currentOrder.push({ item: shuffled[i], qty: qty, temp: temp });
+                }
+            } 
+            else if (currentLevel === 4) {
+                const numItems = Math.floor(Math.random() * 2) + 3; // 3 to 4 (Large order)
+                const shuffled = [...MENU_ITEMS].sort(() => 0.5 - Math.random());
+                for (let i = 0; i < numItems; i++) {
+                    const qty = Math.floor(Math.random() * 4) + 1; // 1 to 4
+                    const temp = shuffled[i].hasTemp ? (Math.random() > 0.5 ? 'HOT' : 'ICE') : null;
+                    currentOrder.push({ item: shuffled[i], qty: qty, temp: temp });
+                }
+            }
+
+            // Always start with greeting
+            orderPhase = 'greeting';
+            updateUIPhase();
+        }
+
+        function updateUIPhase() {
+            const greetingSec = document.getElementById('greetingSection');
+            const customerBubble = document.getElementById('customerSpeech');
+            const titleEl = document.getElementById('greetingTitle');
+            const phraseEl = document.getElementById('greetingPhrase');
+            const micFeedback = document.getElementById('micFeedback');
+            const payButton = document.getElementById('payButton');
+
+            micFeedback.innerText = '';
+
+            if (orderPhase === 'greeting') {
+                greetingSec.classList.remove('hidden');
+                customerBubble.classList.add('hidden');
+                
+                titleEl.innerText = "💬 손님에게 인사를 건네볼까요?";
+                if (currentLevel === 1) {
+                    phraseEl.innerText = '"주문하시겠습니까?"';
+                } else {
+                    phraseEl.innerText = '"안녕하세요? 주문하시겠습니까?"';
+                }
+                payButton.innerText = "결제 불가 (인사 먼저)";
+                payButton.classList.replace('bg-blue-600', 'bg-slate-400');
+            } 
+            else if (orderPhase === 'ordering') {
+                greetingSec.classList.add('hidden');
+                customerBubble.classList.remove('hidden');
+                
+                payButton.innerText = "💳 결제하기";
+                payButton.classList.replace('bg-slate-400', 'bg-blue-600');
+                
+                renderCustomerOrderUI();
+                setTimeout(() => speakOrder(), 500); // Auto-read order once shown
+            } 
+            else if (orderPhase === 'closing') {
+                greetingSec.classList.remove('hidden');
+                customerBubble.classList.add('hidden');
+                
+                titleEl.innerText = "💬 결제가 맞았습니다! 마무리 인사를 해주세요.";
+                phraseEl.innerText = '"결제 완료되었습니다. 감사합니다."';
+                
+                payButton.innerText = "마무리 인사 대기중...";
+                payButton.classList.replace('bg-blue-600', 'bg-emerald-600');
+            }
+        }
+
+        function renderCustomerOrderUI() {
+            let textHtml = "";
+            let pictoHtml = "";
+
+            currentOrder.forEach((ord, index) => {
+                let tempStr = "";
+                let tempBadge = "";
+                if (ord.temp === 'HOT') { tempStr = "따뜻한 "; tempBadge = "🔥HOT "; }
+                else if (ord.temp === 'ICE') { tempStr = "차가운 "; tempBadge = "🧊ICE "; }
+
+                textHtml += `<span class="text-blue-700">${tempStr}${ord.item.name}</span> <span class="text-pink-600">${ord.qty}개</span>`;
+                if (index < currentOrder.length - 1) textHtml += "랑 <br>";
+
+                // Render Pictograms
+                for(let i=0; i<ord.qty; i++) {
+                    pictoHtml += `
+                        <div class="bg-white px-3 py-2 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center">
+                            <span class="text-3xl mb-1">${ord.item.emoji}</span>
+                            <span class="text-xs font-bold text-slate-600">${tempBadge}${ord.item.name}</span>
+                        </div>
+                    `;
+                }
+            });
+            textHtml += " 주세요.";
+            
+            document.getElementById('speechText').innerHTML = textHtml;
+            document.getElementById('pictogramList').innerHTML = pictoHtml;
+        }
+
+        function speakOrder() {
+            if (!speechSynth || orderPhase !== 'ordering') return;
+            speechSynth.cancel();
+            
+            let readText = "안녕하세요. ";
+            currentOrder.forEach((ord, idx) => {
+                let t = ord.temp === 'HOT' ? '따뜻한 ' : (ord.temp === 'ICE' ? '차가운 ' : '');
+                readText += `${t}${ord.item.name} ${ord.qty}개`;
+                if (idx < currentOrder.length - 1) readText += "하고, ";
+            });
+            readText += " 주세요.";
+
+            const utterance = new SpeechSynthesisUtterance(readText);
+            utterance.lang = 'ko-KR';
+            utterance.rate = 0.9;
+            speechSynth.speak(utterance);
+        }
+
+        // --- POS Logic ---
+        function switchTab(category) {
+            playSound('click');
+            activeTab = category;
+            ['coffee', 'beverage', 'dessert'].forEach(cat => {
+                const btn = document.getElementById(`tab_${cat}`);
+                if (cat === category) {
+                    btn.classList.replace('bg-slate-800', 'bg-orange-500');
+                    if(btn.classList.contains('hover:bg-slate-700')) btn.classList.remove('hover:bg-slate-700');
+                } else {
+                    btn.classList.replace('bg-orange-500', 'bg-slate-800');
+                    if(!btn.classList.contains('hover:bg-slate-700')) btn.classList.add('hover:bg-slate-700');
+                }
+            });
+            renderPOSMenu();
+        }
+
+        function renderPOSMenu() {
+            const grid = document.getElementById('menuGrid');
+            grid.innerHTML = '';
+            
+            const filtered = MENU_ITEMS.filter(m => m.category === activeTab);
+            filtered.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = "bg-white p-3 rounded-2xl shadow-sm border-2 border-slate-200 flex flex-col items-center justify-center gap-2 hover:border-blue-400 hover:bg-blue-50 active:scale-95 transition-all";
+                btn.onclick = () => addToBasket(item);
+                btn.innerHTML = `
+                    <span class="text-4xl drop-shadow-sm">${item.emoji}</span>
+                    <span class="font-bold text-slate-700 text-sm break-keep">${item.name}</span>
+                    <span class="text-xs text-slate-400 font-bold">${item.price.toLocaleString()}원</span>
+                `;
+                grid.appendChild(btn);
+            });
+        }
+
+        function addToBasket(item) {
+            if(orderPhase === 'greeting') {
+                playSound('fail');
+                document.getElementById('micFeedback').innerText = "인사를 먼저 해야 포스기를 누를 수 있습니다!";
+                return;
+            }
+
+            playSound('click');
+            // Default temp is ICE if it has temp, else null
+            let defaultTemp = null;
+            if (currentLevel >= 3 && item.hasTemp) {
+                defaultTemp = 'ICE'; // Default to ICE, user can toggle
+            }
+
+            const key = item.id + (defaultTemp ? '_' + defaultTemp : '');
+            
+            if (posBasket[key]) {
+                posBasket[key].qty++;
+            } else {
+                posBasket[key] = { ...item, qty: 1, temp: defaultTemp, baseId: item.id };
+            }
+            updateBasketUI();
+        }
+
+        function toggleBasketItemTemp(key) {
+            playSound('click');
+            const item = posBasket[key];
+            const newTemp = item.temp === 'HOT' ? 'ICE' : 'HOT';
+            const newKey = item.baseId + '_' + newTemp;
+
+            // Merge if the new key already exists in basket
+            if (posBasket[newKey]) {
+                posBasket[newKey].qty += item.qty;
+            } else {
+                posBasket[newKey] = { ...item, temp: newTemp };
+            }
+            delete posBasket[key];
+            updateBasketUI();
+        }
+
+        function adjustBasketQty(key, delta) {
+            playSound('click');
+            if (posBasket[key]) {
+                posBasket[key].qty += delta;
+                if (posBasket[key].qty <= 0) {
+                    delete posBasket[key];
+                }
+                updateBasketUI();
+            }
+        }
+
+        function clearBasket() {
+            if(Object.keys(posBasket).length > 0) playSound('click');
+            posBasket = {};
+            updateBasketUI();
+        }
+
+        function updateBasketUI() {
+            const list = document.getElementById('basketList');
+            list.innerHTML = '';
+            let total = 0;
+
+            Object.keys(posBasket).forEach(key => {
+                const item = posBasket[key];
+                total += item.price * item.qty;
+                
+                let tempBtn = '';
+                if (item.temp) {
+                    const isHot = item.temp === 'HOT';
+                    tempBtn = `<button onclick="toggleBasketItemTemp('${key}')" class="text-xs px-2 py-1 mt-1 rounded font-black shadow-sm transition-colors ${isHot ? 'bg-red-100 text-red-600 border border-red-200' : 'bg-blue-100 text-blue-600 border border-blue-200'}">
+                        ${isHot ? '🔥 HOT' : '🧊 ICE'} (변경)
+                    </button>`;
+                }
+
+                list.innerHTML += `
+                    <div class="bg-white p-3 rounded-xl shadow-sm border border-slate-200 mb-2 flex justify-between items-center">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">${item.emoji}</span>
+                            <div class="flex flex-col items-start">
+                                <span class="font-bold text-slate-700 text-sm">${item.name}</span>
+                                ${tempBtn}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                            <button onclick="adjustBasketQty('${key}', -1)" class="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 font-bold">-</button>
+                            <span class="w-6 text-center font-black">${item.qty}</span>
+                            <button onclick="adjustBasketQty('${key}', 1)" class="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 font-bold">+</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            if (Object.keys(posBasket).length === 0) {
+                list.innerHTML = `<div class="h-full flex items-center justify-center text-slate-400 font-bold text-sm">장바구니가 비어있습니다.</div>`;
+            }
+            
+            document.getElementById('totalPrice').innerText = total.toLocaleString() + '원';
+        }
+
+        // --- Checkout & Validation ---
+        function submitOrder() {
+            if (orderPhase === 'greeting') {
+                playSound('fail');
+                document.getElementById('micFeedback').innerText = "인사를 먼저 완료해야 결제할 수 있습니다!";
+                return;
+            }
+
+            if (orderPhase === 'closing') {
+                playSound('fail');
+                document.getElementById('micFeedback').innerText = "마무리 인사를 해주세요!";
+                return;
+            }
+
+            let isMatched = true;
+            
+            // Check if every item in customer order exists in POS basket exactly
+            currentOrder.forEach(ord => {
+                let foundQty = 0;
+                Object.keys(posBasket).forEach(key => {
+                    const bItem = posBasket[key];
+                    // Match logic: baseId must match. If level>=3, temp must match too.
+                    const tempMatch = (currentLevel < 3) ? true : (bItem.temp === ord.temp);
+                    if (bItem.baseId === ord.item.id && tempMatch) {
+                        foundQty += bItem.qty;
+                    }
+                });
+                if (foundQty !== ord.qty) isMatched = false;
+            });
+
+            // Check if POS basket has extra items not in customer order
+            Object.keys(posBasket).forEach(key => {
+                const bItem = posBasket[key];
+                const matched = currentOrder.find(o => {
+                    const tempMatch = (currentLevel < 3) ? true : (bItem.temp === o.temp);
+                    return o.item.id === bItem.baseId && tempMatch;
+                });
+                if (!matched) isMatched = false;
+            });
+
+            if (isMatched) {
+                if (currentLevel >= 3) {
+                    orderPhase = 'closing';
+                    playSound('click');
+                    updateUIPhase();
+                } else {
+                    completeOrderSuccess();
+                }
+            } else {
+                consecutiveSuccesses = 0; 
+                playSound('fail');
+                showFailPopup();
+                renderProgressStars();
+            }
+        }
+
+        function completeOrderSuccess() {
+            consecutiveSuccesses++;
+            playSound('success');
+            addRevenue();
+            createCoinAnimation();
+            showSuccessPopup();
+            renderProgressStars();
+        }
+
+        function addRevenue() {
+            let total = 0;
+            Object.keys(posBasket).forEach(k => { total += posBasket[k].price * posBasket[k].qty; });
+            totalRevenue += total;
+            document.getElementById('revenueText').innerText = totalRevenue.toLocaleString() + '원';
+        }
+
+        // --- Visual & Audio Effects ---
+        function renderProgressStars() {
+            const container = document.getElementById('starContainer');
+            container.innerHTML = '';
+            for (let i = 0; i < 10; i++) {
+                if (i < consecutiveSuccesses) {
+                    container.innerHTML += `<span class="text-yellow-400 drop-shadow">⭐</span>`;
+                } else {
+                    container.innerHTML += `<span class="text-slate-300 opacity-50">★</span>`;
+                }
+            }
+            
+            document.getElementById('levelDisplay').innerText = `${currentLevel}단계 (${currentLevel===1?'쉬운':currentLevel===2?'보통':currentLevel===3?'복잡한':'단체'} 주문)`;
+
+            if (consecutiveSuccesses >= 10) {
+                setTimeout(() => {
+                    if (currentLevel < 4) {
+                        currentLevel++;
+                        consecutiveSuccesses = 0;
+                        playSound('levelup');
+                        showLevelUpPopup();
+                    }
+                }, 1000);
+            }
+        }
+
+        function createCoinAnimation() {
+            const btn = document.getElementById('payButton');
+            const target = document.getElementById('revenueBox');
+            
+            if(!btn || !target) return;
+            
+            const btnRect = btn.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            
+            for(let i=0; i<5; i++) {
+                setTimeout(() => {
+                    const coin = document.createElement('div');
+                    coin.className = 'coin-anim';
+                    coin.innerText = '🪙';
+                    
+                    const startX = btnRect.left + (btnRect.width / 2);
+                    const startY = btnRect.top;
+                    
+                    const endX = targetRect.left + 20 - startX;
+                    const endY = targetRect.top + 10 - startY;
+                    
+                    coin.style.left = `${startX}px`;
+                    coin.style.top = `${startY}px`;
+                    coin.style.setProperty('--tx', `${endX}px`);
+                    coin.style.setProperty('--ty', `${endY}px`);
+                    
+                    document.body.appendChild(coin);
+                    
+                    setTimeout(() => coin.remove(), 1000);
+                }, i * 150);
+            }
+        }
+
+        // --- Dialogs ---
+        function showSuccessPopup() {
+            document.getElementById('dialogOverlay').classList.remove('hidden');
+            document.getElementById('successPopup').classList.remove('hidden');
+            document.getElementById('failPopup').classList.add('hidden');
+            document.getElementById('levelupPopup').classList.add('hidden');
+        }
+
+        function showFailPopup() {
+            document.getElementById('dialogOverlay').classList.remove('hidden');
+            document.getElementById('failPopup').classList.remove('hidden');
+            document.getElementById('successPopup').classList.add('hidden');
+            document.getElementById('levelupPopup').classList.add('hidden');
+            
+            document.getElementById('hintSpeechText').innerHTML = document.getElementById('speechText').innerHTML;
+        }
+
+        function showLevelUpPopup() {
+            document.getElementById('dialogOverlay').classList.remove('hidden');
+            document.getElementById('levelupPopup').classList.remove('hidden');
+            document.getElementById('successPopup').classList.add('hidden');
+            document.getElementById('failPopup').classList.add('hidden');
+        }
+
+        function closeDialog() {
+            document.getElementById('dialogOverlay').classList.add('hidden');
+        }
+
+        function nextOrder() {
+            closeDialog();
+            generateOrder();
+        }
+
+        // --- Audio ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+            
+            if (type === 'click') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(300, now + 0.1);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } 
+            else if (type === 'success') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.setValueAtTime(600, now + 0.1);
+                osc.frequency.setValueAtTime(800, now + 0.2);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            } 
+            else if (type === 'fail') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.3);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            }
+            else if (type === 'levelup') {
+                osc.type = 'square';
+                [440, 554, 659, 880].forEach((freq, i) => {
+                    osc.frequency.setValueAtTime(freq, now + i*0.15);
+                });
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.8);
+                osc.start(now);
+                osc.stop(now + 0.8);
+            }
+        }
+    </script>
+</body>
+</html>
